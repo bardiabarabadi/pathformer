@@ -169,6 +169,7 @@ class Exp_Main(Exp_Basic):
                     scaler.update()
                 else:
                     loss.backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                     model_optim.step()
 
                 if self.args.lradj == 'TST':

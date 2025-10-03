@@ -10,7 +10,8 @@ warnings.filterwarnings('ignore')
 class Dataset_ETT_hour(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h',
+                 train_ratio=0.5, val_ratio=0.3, test_ratio=0.2):
         # size [seq_len, pred_len]
         if size == None:
             self.seq_len = 24 * 4 * 4
@@ -95,7 +96,8 @@ class Dataset_ETT_hour(Dataset):
 class Dataset_ETT_minute(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTm1.csv',
-                 target='OT', scale=True, timeenc=0, freq='t'):
+                 target='OT', scale=True, timeenc=0, freq='t',
+                 train_ratio=0.5, val_ratio=0.3, test_ratio=0.2):
         # size [seq_len, pred_len]
         # info
         if size == None:
@@ -183,7 +185,8 @@ class Dataset_ETT_minute(Dataset):
 class Dataset_Custom(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h',
+                 train_ratio=0.5, val_ratio=0.3, test_ratio=0.2):
         # size [seq_len, pred_len]
         # info
         if size == None:
@@ -202,6 +205,9 @@ class Dataset_Custom(Dataset):
         self.scale = scale
         self.timeenc = timeenc
         self.freq = freq
+        self.train_ratio = train_ratio
+        self.val_ratio = val_ratio
+        self.test_ratio = test_ratio
 
         self.root_path = root_path
         self.data_path = data_path
@@ -220,11 +226,11 @@ class Dataset_Custom(Dataset):
         cols.remove('date')
         df_raw = df_raw[['date'] + cols + [self.target]]
         # print(cols)
-        num_train = int(len(df_raw) * 0.7)
-        num_test = int(len(df_raw) * 0.2)
-        num_vali = len(df_raw) - num_train - num_test
+        num_train = int(len(df_raw) * self.train_ratio)
+        num_val = int(len(df_raw) * self.val_ratio)
+        num_test = len(df_raw) - num_train - num_val
         border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
-        border2s = [num_train, num_train + num_vali, len(df_raw)]
+        border2s = [num_train, num_train + num_val, len(df_raw)]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
@@ -388,7 +394,8 @@ class Dataset_Pred(Dataset):
 class Dataset_Pretrain(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
-                 target='OT', scale=True, timeenc=0, freq='h'):
+                 target='OT', scale=True, timeenc=0, freq='h',
+                 train_ratio=0.5, val_ratio=0.3, test_ratio=0.2):
         # size [seq_len, pred_len]
         # info
         if size == None:
