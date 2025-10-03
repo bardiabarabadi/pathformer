@@ -52,7 +52,7 @@ if __name__ == '__main__':
                         help='time features encoding, options:[timeF, fixed, learned]')
     parser.add_argument('--residual_connection', type=int, default=0)
     parser.add_argument('--metric', type=str, default='mae')
-    parser.add_argument('--batch_norm', type=int, default=0)
+    parser.add_argument('--batch_norm', type=int, default=1)
 
 
     # optimization
@@ -65,6 +65,7 @@ if __name__ == '__main__':
     parser.add_argument('--lradj', type=str, default='TST', help='adjust learning rate')
     parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
     parser.add_argument('--pct_start', type=float, default=0.4, help='pct_start')
+    parser.add_argument('--vali_freq', type=int, default=1, help='validation frequency (every N epochs)')
 
     # GPU
     parser.add_argument('--use_gpu', type=bool, default=True, help='use gpu')

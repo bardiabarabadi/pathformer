@@ -118,6 +118,7 @@ class Exp_Main(Exp_Basic):
             self.model.train()
             epoch_time = time.time()
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark) in enumerate(train_loader):
+                print ("Epoch: {0}, Steps: {1}/{2}".format(epoch + 1, i + 1, train_steps), end='\r')
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
@@ -154,7 +155,7 @@ class Exp_Main(Exp_Basic):
                         loss = loss + balance_loss
                     train_loss.append(loss.item())
 
-                if (i + 1) % 100 == 0:
+                if (i + 1) % 1 == 0:
                     print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                     speed = (time.time() - time_now) / iter_count
                     left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
@@ -176,12 +177,30 @@ class Exp_Main(Exp_Basic):
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
-            test_loss = self.vali(test_data, test_loader, criterion)
+            
+            vali_loss_computed = False
+            if (epoch + 1) % self.args.vali_freq == 0:
+                vali_loss = self.vali(vali_data, vali_loader, criterion)
+                test_loss = self.vali(test_data, test_loader, criterion)
+                vali_loss_computed = True
+                if not hasattr(self, 'last_vali_loss'):
+                    self.last_vali_loss = vali_loss
+                else:
+                    self.last_vali_loss = vali_loss
+            else:
+                if not hasattr(self, 'last_vali_loss'):
+                    self.last_vali_loss = float('inf')  # or some large number
+                vali_loss = self.last_vali_loss
+                test_loss = self.last_vali_loss  # dummy
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            early_stopping(vali_loss, self.model, path)
+            if vali_loss_computed:
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            else:
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f}".format(
+                    epoch + 1, train_steps, train_loss))
+            
+            early_stopping(self.last_vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
@@ -209,6 +228,12 @@ class Exp_Main(Exp_Basic):
         folder_path = './test_results/' + setting + '/'
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
+
+        # Define column names dynamically from the dataset
+        if hasattr(test_data, 'cols_data'):
+            column_names = list(test_data.cols_data)
+        else:
+            column_names = [f'Variable {i}' for i in range(true.shape[-1])]  # Fallback for non-custom datasets
 
         self.model.eval()
         with torch.no_grad():
@@ -245,11 +270,13 @@ class Exp_Main(Exp_Basic):
                 trues.append(true)
                 inputx.append(batch_x.detach().cpu().numpy())
 
-                if i % 20 == 0:
+                if i % 5 == 0:  # Changed from 20 to 5 to generate more sample plots
                     input = batch_x.detach().cpu().numpy()
-                    gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
-                    pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
-                    visual(gt, pd, os.path.join(folder_path, str(i) + '.pdf'))
+                    for var_idx in range(true.shape[-1]):  # Plot for each variable
+                        gt = np.concatenate((input[0, :, var_idx], true[0, :, var_idx]), axis=0)
+                        pd = np.concatenate((input[0, :, var_idx], pred[0, :, var_idx]), axis=0)
+                        title = column_names[var_idx]
+                        visual(gt, pd, os.path.join(folder_path, f'{i}_var{var_idx}.pdf'), title=title)
 
         if self.args.test_flop:
             test_params_flop((batch_x.shape[1], batch_x.shape[2]))
@@ -270,6 +297,12 @@ class Exp_Main(Exp_Basic):
         f.write('\n')
         f.write('\n')
         f.close()
+
+        # Save predictions and true values
+        np.save(os.path.join(folder_path, 'preds.npy'), preds)
+        np.save(os.path.join(folder_path, 'trues.npy'), trues)
+        np.save(os.path.join(folder_path, 'inputx.npy'), inputx)
+
         return
 
     def predict(self, setting, load=False):

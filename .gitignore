@@ -6,10 +6,12 @@ result/
 
 .idea/
 
-.vscode/
-
 .venv/
 
 .DS_Store
 
+checkpoints/
 
+result.txt
+
+test_results/

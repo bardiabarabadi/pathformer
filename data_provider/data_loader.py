@@ -231,8 +231,10 @@ class Dataset_Custom(Dataset):
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
+            self.cols_data = list(cols_data)
         elif self.features == 'S':
             df_data = df_raw[[self.target]]
+            self.cols_data = [self.target]
 
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]

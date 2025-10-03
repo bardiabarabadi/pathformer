@@ -44,7 +44,7 @@ class EarlyStopping:
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
+        self.val_loss_min = np.inf
         self.delta = delta
 
     def __call__(self, val_loss, model, path):
@@ -88,7 +88,7 @@ class StandardScaler():
         return (data * self.std) + self.mean
 
 
-def visual(true, preds=None, name='./pic/test.pdf'):
+def visual(true, preds=None, name='./pic/test.pdf', title=None):
     """
     Results visualization
     """
@@ -98,6 +98,8 @@ def visual(true, preds=None, name='./pic/test.pdf'):
     if preds is not None:
         plt.plot(preds, label='Prediction', linewidth=2)
     plt.legend(loc="upper right")
+    if title:
+        plt.title(title)
     plt.savefig(name,bbox_inches='tight')
 
 def test_params_flop(model,x_shape):
