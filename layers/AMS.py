@@ -56,13 +56,27 @@ class AMS(nn.Module):
         top_values_flat = noisy_top_values.flatten()
 
         threshold_positions_if_in = torch.arange(batch, device=clean_values.device) * m + self.k
+        threshold_positions_if_in = torch.clamp(threshold_positions_if_in, max=top_values_flat.numel() - 1)
         threshold_if_in = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_in), 1)
         is_in = torch.gt(noisy_values, threshold_if_in)
-        threshold_positions_if_out = threshold_positions_if_in - 1
+        threshold_positions_if_out = torch.clamp(threshold_positions_if_in - 1, min=0)
         threshold_if_out = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_out), 1)
         normal = Normal(self.mean, self.std)
-        prob_if_in = normal.cdf((clean_values - threshold_if_in) / noise_stddev)
-        prob_if_out = normal.cdf((clean_values - threshold_if_out) / noise_stddev)
+
+        safe_noise_stddev = torch.clamp(noise_stddev, min=1e-6)
+        safe_noise_stddev = torch.nan_to_num(safe_noise_stddev, nan=1e-6, posinf=1e6, neginf=1e-6)
+
+        normalized_if_in = (clean_values - threshold_if_in) / safe_noise_stddev
+        normalized_if_out = (clean_values - threshold_if_out) / safe_noise_stddev
+
+        normalized_if_in = torch.nan_to_num(normalized_if_in, nan=0.0, posinf=10.0, neginf=-10.0)
+        normalized_if_out = torch.nan_to_num(normalized_if_out, nan=0.0, posinf=10.0, neginf=-10.0)
+
+        normalized_if_in = torch.clamp(normalized_if_in, min=-10.0, max=10.0)
+        normalized_if_out = torch.clamp(normalized_if_out, min=-10.0, max=10.0)
+
+        prob_if_in = normal.cdf(normalized_if_in)
+        prob_if_out = normal.cdf(normalized_if_out)
         prob = torch.where(is_in, prob_if_in, prob_if_out)
         return prob
 
@@ -70,30 +84,39 @@ class AMS(nn.Module):
         x = x[:, :, :, 0]
         _, trend = self.trend_model(x)
         seasonality, _ = self.seasonality_model(x)
-        return x + seasonality + trend
+        decomposed = x + seasonality + trend
+        return torch.nan_to_num(decomposed, nan=0.0, posinf=0.0, neginf=0.0)
 
     def noisy_top_k_gating(self, x, train, noise_epsilon=1e-2):
         x = self.start_linear(x).squeeze(-1)
+        x = torch.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
 
         # clean_logits = x @ self.w_gate
         clean_logits = self.w_gate(x)
+        clean_logits = torch.nan_to_num(clean_logits, nan=0.0, posinf=0.0, neginf=0.0)
         if self.noisy_gating and train:
             # raw_noise_stddev = x @ self.w_noise
             raw_noise_stddev = self.w_noise(x)
             noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon))
+            noise_stddev = torch.nan_to_num(noise_stddev, nan=noise_epsilon, posinf=1e6, neginf=noise_epsilon)
+            noise_stddev = torch.clamp(noise_stddev, min=noise_epsilon)
             noisy_logits = clean_logits + (torch.randn_like(clean_logits) * noise_stddev)
+            noisy_logits = torch.nan_to_num(noisy_logits, nan=0.0, posinf=0.0, neginf=0.0)
             logits = noisy_logits
         else:
             logits = clean_logits
+        logits = torch.nan_to_num(logits, nan=0.0, posinf=0.0, neginf=0.0)
         # calculate topk + 1 that will be needed for the noisy gates
         top_logits, top_indices = logits.topk(min(self.k + 1, self.num_experts), dim=1)
 
         top_k_logits = top_logits[:, :self.k]
         top_k_indices = top_indices[:, :self.k]
         top_k_gates = self.softmax(top_k_logits)
+        top_k_gates = torch.nan_to_num(top_k_gates, nan=0.0, posinf=0.0, neginf=0.0)
 
-        zeros = torch.zeros_like(logits, requires_grad=True)
+        zeros = torch.zeros_like(logits)
         gates = zeros.scatter(1, top_k_indices, top_k_gates)
+        gates = torch.nan_to_num(gates, nan=0.0, posinf=0.0, neginf=0.0)
 
         if self.noisy_gating and self.k < self.num_experts and train:
             load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
