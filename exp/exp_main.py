@@ -83,6 +83,7 @@ class Exp_Main(Exp_Basic):
                 total_loss.append(loss)
         total_loss = np.average(total_loss)
         self.model.train()
+        torch.cuda.empty_cache()  # Free unused GPU memory
         return total_loss
 
     def train(self, setting):
@@ -103,7 +104,12 @@ class Exp_Main(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
-        if self.args.use_amp:
+        # Enable AMP by default on CUDA for memory efficiency
+        if torch.cuda.is_available():
+            self.args.use_amp = True
+            scaler = torch.cuda.amp.GradScaler()
+            print("Enabling AMP for memory efficiency")
+        elif self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
         scheduler = lr_scheduler.OneCycleLR(optimizer=model_optim,
@@ -123,7 +129,7 @@ class Exp_Main(Exp_Basic):
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(self.device)
 
-                batch_y = batch_y.float().to(self.device)
+                batch_y = batch_y.float()
                 batch_x_mark = batch_x_mark.float().to(self.device)
                 batch_y_mark = batch_y_mark.float().to(self.device)
 
@@ -141,6 +147,8 @@ class Exp_Main(Exp_Basic):
                         outputs = outputs[:, -self.args.pred_len:, f_dim:]
                         batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
                         loss = criterion(outputs, batch_y)
+                        if self.args.model == 'PathFormer':
+                            loss = loss + balance_loss
                         train_loss.append(loss.item())
                 else:
                     if self.args.model == 'PathFormer':
@@ -165,6 +173,7 @@ class Exp_Main(Exp_Basic):
 
                 if self.args.use_amp:
                     scaler.scale(loss).backward()
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)  # Clip gradients
                     scaler.step(model_optim)
                     scaler.update()
                 else:
@@ -177,12 +186,16 @@ class Exp_Main(Exp_Basic):
                     scheduler.step()
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            if torch.cuda.is_available():
+                print(f"GPU Memory: Allocated {torch.cuda.memory_allocated()/1024**2:.1f} MB, Reserved {torch.cuda.memory_reserved()/1024**2:.1f} MB")
+            torch.cuda.empty_cache()  # Free unused GPU memory after epoch
             train_loss = np.average(train_loss)
             
             vali_loss_computed = False
             if (epoch + 1) % self.args.vali_freq == 0:
                 vali_loss = self.vali(vali_data, vali_loader, criterion)
                 test_loss = self.vali(test_data, test_loader, criterion)
+                torch.cuda.empty_cache()  # Free unused GPU memory after validation
                 vali_loss_computed = True
                 if not hasattr(self, 'last_vali_loss'):
                     self.last_vali_loss = vali_loss
